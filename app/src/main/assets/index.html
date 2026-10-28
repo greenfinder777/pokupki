@@ -1,0 +1,280 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Список в магазин</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+/* Layout: one column, big tappable rows for use with one hand in a store. Single dark look by request. */
+:root{
+  --bg:#000000;
+  --row:#121212;
+  --row-hi:#1c1c1c;
+  --line:#262626;
+  --fg:#ffffff;
+  --muted:#8c8c8c;
+  --green:#3ddc84;
+  --green-bg:#0d2a1a;
+  --danger:#ff5a5a;
+  --font:system-ui,-apple-system,"Roboto","Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:18px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.screen{max-width:640px;margin:0 auto;padding-block:12px 40px;display:flex;flex-direction:column;gap:14px}
+
+/* Header */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;align-items:center;gap:8px;padding-block:8px}
+.bar h1{font-size:24px;font-weight:700;margin:0;flex:1;min-width:0}
+.back{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:26px;background:var(--row)}
+.sub{color:var(--muted);font-size:15px;margin:0}
+
+/* Home */
+.home{justify-content:center;min-height:100%;box-sizing:border-box;gap:18px}
+.home h1{font-size:30px;margin:0 0 8px}
+.big{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+  padding:26px 22px;border-radius:18px;background:var(--row);border:1px solid var(--line);text-align:left}
+.big strong{font-size:24px;font-weight:700}
+.big span{color:var(--muted);font-size:16px}
+.big.main{background:var(--green-bg);border-color:#1f5a38}
+.big.main span{color:var(--green)}
+
+/* Add form */
+.add{display:flex;gap:8px}
+.add input{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--row);border:1px solid var(--line);border-radius:12px;padding:14px}
+.add input::placeholder{color:var(--muted)}
+.add button{padding:0 18px;border-radius:12px;background:var(--fg);color:var(--bg);font-weight:700}
+
+/* Lists */
+.list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.item{display:flex;align-items:center;gap:4px;min-height:60px;background:var(--row);border:1px solid var(--line);border-radius:14px;padding-left:12px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.item .tap{flex:1;min-width:0;display:flex;align-items:center;gap:12px;align-self:stretch;text-align:left;padding-block:10px}
+.item .name{flex:1;min-width:0;overflow-wrap:anywhere;font-size:20px}
+.box{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:grid;place-items:center;font-size:17px;font-weight:800;color:var(--bg)}
+.item.on .box{background:var(--green);border-color:var(--green)}
+.item.on .box::after{content:"✓"}
+.item.on{border-color:#1f5a38}
+.item.bought .name{color:var(--green)}
+.item.bought{background:var(--green-bg)}
+.icon{flex:none;width:44px;height:44px;border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:19px}
+.icon.del.armed{background:var(--danger);color:var(--bg);width:auto;padding:0 10px;font-size:15px;font-weight:700}
+.handle{flex:none;width:52px;align-self:stretch;display:grid;place-items:center;color:var(--muted);font-size:24px;touch-action:none;cursor:grab}
+.item.dragging{position:relative;z-index:3;background:var(--row-hi);border-color:var(--fg);box-shadow:0 10px 30px rgba(0,0,0,.8)}
+.edit{flex:1;min-width:0;font:inherit;font-size:20px;color:var(--fg);background:var(--bg);border:1px solid var(--green);border-radius:8px;padding:8px}
+
+.empty{color:var(--muted);text-align:center;padding:40px 12px;border:1px dashed var(--line);border-radius:14px;line-height:1.5}
+.reset{align-self:center;padding:12px 18px;border-radius:12px;border:1px solid var(--line);color:var(--muted);font-size:16px}
+.reset.armed{border-color:var(--danger);color:var(--danger)}
+.hint{color:var(--muted);font-size:14px;text-align:center;margin:0}
+@media (prefers-reduced-motion:no-preference){.item{transition:background .15s,border-color .15s}}
+</style>
+
+</head><body><div id="app"></div>
+
+<script>
+(function(){
+  var KEY = "shopping-app-v1";
+  var state = load();
+
+  function load(){
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(KEY)); } catch(e){}
+    if (s && Array.isArray(s.items)) return s;
+    // Первый запуск: примеры, которые можно удалить
+    var names = ["Молоко","Хлеб","Яйца","Сыр","Яблоки","Гречка"];
+    var items = names.map(function(n,i){ return {id:"p"+i, name:n, sel:i<4}; });
+    return {items:items, shop:["p0","p1","p2","p3"], bought:{"p1":true}, next:names.length};
+  }
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
+  function byId(id){ for (var i=0;i<state.items.length;i++) if (state.items[i].id===id) return state.items[i]; return null; }
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+
+  var app = document.getElementById("app");
+  var editing = null;
+
+  function route(){ var h = location.hash.replace("#",""); return (h==="shop"||h==="products") ? h : "home"; }
+  function go(r){ location.hash = r==="home" ? "" : r; }
+  window.addEventListener("hashchange", function(){ editing=null; render(); window.scrollTo(0,0); });
+
+  function render(){
+    var r = route();
+    if (r==="home") renderHome(); else if (r==="shop") renderShop(); else renderProducts();
+  }
+
+  function shopList(){ return state.shop.map(byId).filter(function(p){ return p && p.sel; }); }
+
+  function renderHome(){
+    var list = shopList(), left = list.filter(function(p){return !state.bought[p.id];}).length;
+    app.innerHTML =
+      '<div class="screen home">'+
+        '<h1>Список в магазин</h1>'+
+        '<button class="big main" id="toShop"><strong>Покупки</strong><span>'+(list.length? (left? "осталось "+left+" из "+list.length : "всё куплено ✓") : "пусто")+'</span></button>'+
+        '<button class="big" id="toProducts"><strong>Настройки</strong><span>'+state.items.length+' прод.</span></button>'+
+      '</div>';
+    document.getElementById("toShop").onclick=function(){go("shop");};
+    document.getElementById("toProducts").onclick=function(){go("products");};
+  }
+
+  function header(title, sub){
+    return '<div class="bar"><button class="back" id="back" aria-label="Назад">‹</button><h1>'+title+'</h1></div>'+(sub?'<p class="sub">'+sub+'</p>':'');
+  }
+  function bindBack(){ document.getElementById("back").onclick=function(){ go("home"); }; }
+
+  /* ---------- Настройки ---------- */
+  function renderProducts(){
+    var rows = state.items.map(function(p){
+      var on = p.sel ? " on" : "";
+      if (editing===p.id){
+        return '<li class="item'+on+'" data-id="'+p.id+'"><span class="box"></span>'+
+          '<input class="edit" id="edit-'+p.id+'" value="'+esc(p.name)+'" enterkeyhint="done">'+
+          '<button class="icon ok" aria-label="Готово">✓</button></li>';
+      }
+      return '<li class="item'+on+'" data-id="'+p.id+'">'+
+        '<button class="tap"><span class="box"></span><span class="name">'+esc(p.name)+'</span></button>'+
+        '<button class="icon ren" aria-label="Переименовать">✎</button>'+
+        '<button class="icon del" aria-label="Удалить">✕</button>'+
+        '<span class="handle" aria-label="Перетащить">≡</span></li>';
+    }).join("");
+    app.innerHTML =
+      '<div class="screen">'+ header("Настройки","Нажмите на продукт, чтобы добавить его в покупки или убрать. ≡ — потяните, чтобы переставить.")+
+        '<form class="add" id="addForm"><input id="newName" placeholder="Новый продукт" autocomplete="off" enterkeyhint="done"><button type="submit">Добавить</button></form>'+
+        (rows ? '<ul class="list" id="list">'+rows+'</ul>' : '<div class="empty">Список пуст.<br>Впишите первый продукт в поле выше.</div>')+
+      '</div>';
+    bindBack();
+
+    document.getElementById("addForm").onsubmit=function(e){
+      e.preventDefault();
+      var inp=document.getElementById("newName"), v=inp.value.trim();
+      if(!v) return;
+      var id="p"+(state.next++);
+      state.items.push({id:id,name:v,sel:false});
+      save(); render();
+      var ni=document.getElementById("newName"); if(ni) ni.focus();
+    };
+
+    var list=document.getElementById("list"); if(!list) return;
+    list.addEventListener("click", function(e){
+      var li=e.target.closest(".item"); if(!li) return;
+      var p=byId(li.dataset.id);
+      if (e.target.closest(".tap")){
+        p.sel=!p.sel;
+        if(p.sel){ if(state.shop.indexOf(p.id)<0) state.shop.push(p.id); }
+        else { state.shop=state.shop.filter(function(x){return x!==p.id;}); delete state.bought[p.id]; }
+        save(); li.classList.toggle("on",p.sel);
+      } else if (e.target.closest(".ren")){
+        editing=p.id; render();
+        var ed=document.getElementById("edit-"+p.id); if(ed){ ed.focus(); ed.select(); }
+      } else if (e.target.closest(".ok")){
+        finishEdit();
+      } else if (e.target.closest(".del")){
+        var b=e.target.closest(".del");
+        if(!b.classList.contains("armed")){
+          b.classList.add("armed"); b.textContent="Удалить?";
+          setTimeout(function(){ if(b.isConnected){ b.classList.remove("armed"); b.textContent="✕"; } },3000);
+        } else {
+          state.items=state.items.filter(function(x){return x.id!==p.id;});
+          state.shop=state.shop.filter(function(x){return x!==p.id;}); delete state.bought[p.id];
+          save(); render();
+        }
+      }
+    });
+    var ed = editing && document.getElementById("edit-"+editing);
+    if (ed){
+      ed.addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); finishEdit(); }});
+    }
+    makeSortable(list, function(ids){
+      var map={}; state.items.forEach(function(p){map[p.id]=p;});
+      state.items=ids.map(function(id){return map[id];}); save();
+    });
+  }
+  function finishEdit(){
+    var ed=document.getElementById("edit-"+editing);
+    var p=byId(editing);
+    if(ed && p){ var v=ed.value.trim(); if(v) p.name=v; save(); }
+    editing=null; render();
+  }
+
+  /* ---------- Покупки ---------- */
+  function renderShop(){
+    var list=shopList();
+    var done=list.filter(function(p){return state.bought[p.id];}).length;
+    var rows=list.map(function(p){
+      var b=state.bought[p.id]?" on bought":"";
+      return '<li class="item'+b+'" data-id="'+p.id+'"><button class="tap"><span class="box"></span><span class="name">'+esc(p.name)+'</span></button><span class="handle" aria-label="Перетащить">≡</span></li>';
+    }).join("");
+    app.innerHTML =
+      '<div class="screen">'+ header("Покупки", list.length ? 'Куплено <span id="cnt">'+done+'</span> из '+list.length : "")+
+        (rows ? '<ul class="list" id="list">'+rows+'</ul>'+
+           '<button class="reset" id="reset">Снять все отметки</button>'
+         : '<div class="empty">Здесь пока ничего нет.<br>Отметьте нужные продукты в «Настройках».</div>')+
+      '</div>';
+    bindBack();
+    var ul=document.getElementById("list"); if(!ul) return;
+    ul.addEventListener("click",function(e){
+      if(!e.target.closest(".tap")) return;
+      var li=e.target.closest(".item"), id=li.dataset.id;
+      if(state.bought[id]) delete state.bought[id]; else state.bought[id]=true;
+      save();
+      li.classList.toggle("on",!!state.bought[id]); li.classList.toggle("bought",!!state.bought[id]);
+      document.getElementById("cnt").textContent=Object.keys(state.bought).filter(function(k){return shopList().some(function(p){return p.id===k;});}).length;
+    });
+    var rb=document.getElementById("reset");
+    rb.onclick=function(){
+      if(!rb.classList.contains("armed")){
+        rb.classList.add("armed"); rb.textContent="Нажмите ещё раз, чтобы снять отметки";
+        setTimeout(function(){ if(rb.isConnected){ rb.classList.remove("armed"); rb.textContent="Снять все отметки"; } },3000);
+      } else { state.bought={}; save(); render(); }
+    };
+    makeSortable(ul,function(ids){
+      var rest=state.shop.filter(function(id){return ids.indexOf(id)<0;});
+      state.shop=ids.concat(rest); save();
+    });
+  }
+
+  /* ---------- Перетаскивание пальцем ---------- */
+  function makeSortable(list, onDone){
+    list.addEventListener("pointerdown",function(e){
+      var h=e.target.closest(".handle"); if(!h) return;
+      e.preventDefault();
+      var row=h.closest(".item");
+      var grab=e.clientY-row.getBoundingClientRect().top;
+      var y=e.clientY, scrollTimer=null;
+      row.classList.add("dragging");
+      try{ h.setPointerCapture(e.pointerId); }catch(_){}
+
+      function place(){
+        row.style.transform="";
+        var moved=true;
+        while(moved){
+          moved=false;
+          var prev=row.previousElementSibling, next=row.nextElementSibling;
+          if(prev){ var pr=prev.getBoundingClientRect(); if(y<pr.top+pr.height/2){ list.insertBefore(row,prev); moved=true; continue; } }
+          if(next){ var nr=next.getBoundingClientRect(); if(y>nr.top+nr.height/2){ list.insertBefore(next,row); moved=true; } }
+        }
+        var r=row.getBoundingClientRect();
+        row.style.transform="translateY("+(y-grab-r.top)+"px)";
+      }
+      function autoScroll(){
+        var vh=window.innerHeight, d=0;
+        if(y<90) d=-10; else if(y>vh-90) d=10;
+        if(d){ window.scrollBy(0,d); place(); }
+      }
+      function move(ev){ y=ev.clientY; place(); }
+      function up(){
+        clearInterval(scrollTimer);
+        h.removeEventListener("pointermove",move); h.removeEventListener("pointerup",up); h.removeEventListener("pointercancel",up);
+        row.classList.remove("dragging"); row.style.transform="";
+        onDone([].map.call(list.children,function(li){return li.dataset.id;}));
+      }
+      scrollTimer=setInterval(autoScroll,16);
+      h.addEventListener("pointermove",move); h.addEventListener("pointerup",up); h.addEventListener("pointercancel",up);
+    });
+  }
+
+  render();
+})();
+</script>
+</body></html>
